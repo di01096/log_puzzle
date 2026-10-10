@@ -7,6 +7,7 @@ export function useGame() {
   const hp = ref(280), maxHp = ref(280), attackBonus = ref(0), augments = ref([]);
   const board = ref(createBoard()), enemy = ref(null), turn = ref(1), combos = ref(0), totalDamage = ref(0);
   const busy = ref(false), grabbed = ref(false), cursor = ref(14), moved = ref(false), remaining = ref(6);
+  const pointerDrop = ref(null);
   const matched = ref([]), choices = ref([]), recruitCandidate = ref(null);
   const logs = ref(['숲의 입구에 도착했습니다. 첫 번째 경로를 선택하세요.']);
   const helpOpen = ref(false), restartOpen = ref(false), clears = ref(0);
@@ -25,7 +26,7 @@ export function useGame() {
   const heal = amount => { const actual = Math.min(maxHp.value - hp.value, amount); hp.value += actual; return actual; };
   function stopClock() { clearInterval(timer); timer = null; deadline = 0; }
   function reset() {
-    revision++; stopClock(); pointerId = null;
+    revision++; stopClock(); pointerId = null; pointerDrop.value = null;
     phase.value = 'map'; map.value = createMap(); current.value = null; visited.value = [];
     team.value = MONSTERS.slice(0, 3).map(m => ({ ...m, cooldown: 0 }));
     hp.value = maxHp.value = 280; attackBonus.value = 0; augments.value = [];
@@ -108,7 +109,7 @@ export function useGame() {
   }
   function release() {
     if (!grabbed.value) return;
-    grabbed.value = false; pointerId = null; stopClock();
+    grabbed.value = false; pointerId = null; pointerDrop.value = null; stopClock();
     if (moved.value) resolveTurn();
   }
   async function resolveTurn() {
@@ -151,11 +152,20 @@ export function useGame() {
     const cell = event.target.closest('[data-cell]');
     if (!cell || !begin(Number(cell.dataset.cell))) return;
     event.preventDefault(); pointerId = event.pointerId;
+    const rect = cell.getBoundingClientRect();
+    pointerDrop.value = {
+      x: event.clientX ?? rect.left + rect.width / 2,
+      y: event.clientY ?? rect.top + rect.height / 2,
+      size: rect.width * 0.8,
+      element: board.value[cursor.value],
+    };
     event.currentTarget.focus({ preventScroll: true }); event.currentTarget.setPointerCapture(event.pointerId);
   }
   function pointerMove(event) {
     if (!grabbed.value || event.pointerId !== pointerId) return;
     event.preventDefault();
+    // Track every pointer movement, including motion within a cell or outside the board.
+    pointerDrop.value = { ...pointerDrop.value, x: event.clientX, y: event.clientY };
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.floor((event.clientX - rect.left) / rect.width * COLS), y = Math.floor((event.clientY - rect.top) / rect.height * 5);
     if (x < 0 || x >= COLS || y < 0 || y >= 5) return;
@@ -184,5 +194,5 @@ export function useGame() {
   const onVisibility = () => { if (document.hidden) release(); };
   window.addEventListener('blur', onBlur); document.addEventListener('visibilitychange', onVisibility);
   onBeforeUnmount(() => { revision++; stopClock(); motionQuery.removeEventListener('change', onMediaChange); window.removeEventListener('blur', onBlur); document.removeEventListener('visibilitychange', onVisibility); });
-  return { phase, map, current, visited, team, hp, maxHp, attackBonus, augments, board, enemy, turn, combos, totalDamage, busy, grabbed, cursor, moved, remaining, matched, choices, recruitCandidate, logs, helpOpen, restartOpen, clears, mobile, moveTime, available, augmented, edges, reset, selectNode, chooseAugment, chooseGrowth, replaceMonster, rest, eventChoice, skill, pointerDown, pointerMove, pointerEnd, keydown, release };
+  return { phase, map, current, visited, team, hp, maxHp, attackBonus, augments, board, enemy, turn, combos, totalDamage, busy, grabbed, pointerDrop, cursor, moved, remaining, matched, choices, recruitCandidate, logs, helpOpen, restartOpen, clears, mobile, moveTime, available, augmented, edges, reset, selectNode, chooseAugment, chooseGrowth, replaceMonster, rest, eventChoice, skill, pointerDown, pointerMove, pointerEnd, keydown, release };
 }

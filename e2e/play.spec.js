@@ -53,6 +53,7 @@ test('keyboard moves cursor and held orb on PC; mobile ignores keyboard', async 
     return { board: [...g.board.value], cursor: g.cursor.value };
   });
   await page.keyboard.press('Space'); await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('.dragged-orb')).toHaveCount(0);
   const after = await page.evaluate(() => {
     const g = document.querySelector('#app').__vue_app__._instance.setupState.g;
     return { board: [...g.board.value], cursor: g.cursor.value };
@@ -64,6 +65,40 @@ test('keyboard moves cursor and held orb on PC; mobile ignores keyboard', async 
     await page.keyboard.press('Space');
     await expect(page.locator('.battle-panel .tiny-tag')).toHaveText('TURN 02');
   }
+});
+test('held drop follows pointer coordinates within cells and outside the board', async ({ page, context, isMobile }) => {
+  await readyBattle(page, 9999);
+  const start = await center(page, 8);
+  const cdp = isMobile ? await context.newCDPSession(page) : null;
+  const move = async position => {
+    if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...position, id: 1 }] });
+    else await page.mouse.move(position.x, position.y);
+  };
+  const checkPosition = async position => {
+    await expect.poll(async () => {
+      const rect = await page.locator('.dragged-orb').boundingBox();
+      return rect ? Math.hypot(rect.x + rect.width / 2 - position.x, rect.y + rect.height / 2 - position.y) : 1000;
+    }).toBeLessThan(2);
+  };
+  if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...start, id: 1 }] });
+  else { await page.mouse.move(start.x, start.y); await page.mouse.down(); }
+  await checkPosition(start);
+  await expect(page.locator('[data-cell="8"] .orb')).toBeHidden();
+  await expect(page.locator('.dragged-orb')).toHaveClass(/fire/);
+  const offset = { x: start.x + 7, y: start.y + 5 };
+  await move(offset); await checkPosition(offset);
+  await expect(page.locator('.pointer-held')).toHaveAttribute('data-cell', '8');
+  const next = await center(page, 2);
+  await move(next); await checkPosition(next);
+  await expect(page.locator('.pointer-held')).toHaveAttribute('data-cell', '2');
+  await expect(page.locator('.dragged-orb')).toHaveClass(/fire/);
+  const boardRect = await page.locator('.board').boundingBox();
+  const outside = { x: boardRect.x - 6, y: next.y };
+  await move(outside); await checkPosition(outside);
+  if (cdp) await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  else await page.mouse.up();
+  await expect(page.locator('.dragged-orb')).toHaveCount(0);
+  await expect(page.locator('.pointer-held')).toHaveCount(0);
 });
 test('boss victory, defeat, full-party replacement and restart resolve correctly', async ({ page }) => {
   await readyBattle(page);
